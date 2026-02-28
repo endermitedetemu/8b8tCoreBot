@@ -27,7 +27,6 @@ class DiscordBot {
         this.banManager = null;
         this.userManager = null;
         this.messagingHandler = null;
-        this.logsManager = null;
     }
 
     async start() {
@@ -46,9 +45,6 @@ class DiscordBot {
                     this.channels.alert = await this.client.channels.fetch(
                         config.discord.channels.alert,
                     );
-                    this.channels.logs = await this.client.channels.fetch(
-                        config.discord.channels.logs,
-                    );
                     console.log(
                         `Canal principal cargado: ${this.channels.main.name}`,
                     );
@@ -57,9 +53,6 @@ class DiscordBot {
                     );
                     console.log(
                         `Canal alertas cargado: ${this.channels.alert.name}`,
-                    );
-                    console.log(
-                        `Canal logs cargado: ${this.channels.logs.name}`,
                     );
                 } catch (error) {
                     console.error("Error al cargar canales:", error);
@@ -105,18 +98,6 @@ class DiscordBot {
             new SlashCommandBuilder()
                 .setName("ddsstatus")
                 .setDescription("Ver el estado del DDS activo"),
-            new SlashCommandBuilder()
-                .setName("loglist")
-                .setDescription("Ver lista de usuarios en los logs"),
-            new SlashCommandBuilder()
-                .setName("logsview")
-                .setDescription("Ver logs de coordenadas de un usuario")
-                .addStringOption((o) =>
-                    o
-                        .setName("username")
-                        .setDescription("Usuario de Minecraft")
-                        .setRequired(true),
-                ),
             new SlashCommandBuilder()
                 .setName("ban")
                 .setDescription("Añadir usuario a la lista de baneos")
@@ -219,7 +200,9 @@ class DiscordBot {
                 ),
             new SlashCommandBuilder()
                 .setName("8b8tplayer")
-                .setDescription("Estadísticas de jugadores registrados en el servidor"),
+                .setDescription(
+                    "Estadísticas de jugadores registrados en el servidor",
+                ),
             new SlashCommandBuilder()
                 .setName("blacklist")
                 .setDescription("Añadir usuario a la blacklist (rojo en PDF)")
@@ -273,7 +256,7 @@ class DiscordBot {
         this.messagingHandler = messagingHandler;
     }
     setLogsManager(logsManager) {
-        this.logsManager = logsManager;
+        // mantenido por compatibilidad, ya no se usa
     }
     setJoindateManager(jm) {
         this.joindateManager = jm;
@@ -282,27 +265,6 @@ class DiscordBot {
     async setupEvents() {
         this.client.on("messageCreate", async (message) => {
             if (message.author.bot) return;
-
-            if (message.channel.id === config.discord.channels.logs) {
-                if (message.embeds && message.embeds.length > 0) {
-                    for (const embed of message.embeds) {
-                        const parsedLog = this.logsManager.parseLogEmbed(embed);
-                        if (parsedLog) {
-                            this.logsManager.addLog(
-                                parsedLog.username,
-                                parsedLog.x,
-                                parsedLog.y,
-                                parsedLog.z,
-                                parsedLog.dimension,
-                                parsedLog.timestamp,
-                            );
-                            this.logsManager.saveCheckpoint(message.id);
-                        }
-                    }
-                }
-                return;
-            }
-
             if (message.channel.id !== config.discord.channels.main) return;
             if (message.content.startsWith("/")) return;
             if (this.mcBot && this.mcBot.player) {
@@ -333,77 +295,6 @@ class DiscordBot {
                 this.banManager.save();
                 setTimeout(() => process.exit(0), 2000);
                 return;
-            }
-
-            if (commandName === "loglist") {
-                const users = this.logsManager.getAllUsers();
-                if (users.length === 0) {
-                    return interaction.reply({
-                        content: "No hay usuarios en los logs.",
-                        ephemeral: true,
-                    });
-                }
-                const chunks = [];
-                for (let i = 0; i < users.length; i += 30)
-                    chunks.push(users.slice(i, i + 30));
-                const userList = chunks[0]
-                    .map((u, i) => `\`${i + 1}.\` ${u}`)
-                    .join("\n");
-                const embed = new EmbedBuilder()
-                    .setColor("#3498db")
-                    .setTitle("Lista de Usuarios en Logs")
-                    .setDescription(
-                        `**Total:** ${users.length} usuario${users.length !== 1 ? "s" : ""}`,
-                    )
-                    .addFields({
-                        name: "Usuarios",
-                        value: userList,
-                        inline: false,
-                    })
-                    .setFooter({
-                        text: `Página 1/${chunks.length} | Usa /logsview <usuario> para ver detalles`,
-                    })
-                    .setTimestamp();
-                return interaction.reply({ embeds: [embed], ephemeral: true });
-            }
-
-            if (commandName === "logsview") {
-                const targetUser = interaction.options
-                    .getString("username")
-                    .toLowerCase();
-                const userLogs = this.logsManager.getUserLogs(targetUser);
-                if (userLogs.length === 0) {
-                    return interaction.reply({
-                        content: "No hay logs para " + targetUser + ".",
-                        ephemeral: true,
-                    });
-                }
-                await interaction.deferReply({ ephemeral: true });
-                // Paginar: max 10 logs por embed para no trabar
-                const PAGE_SIZE = 10;
-                const pages = [];
-                for (let i = 0; i < userLogs.length; i += PAGE_SIZE) {
-                    pages.push(userLogs.slice(i, i + PAGE_SIZE));
-                }
-                const { EmbedBuilder } = require("discord.js");
-                const embeds = pages.map((page, idx) => {
-                    const fields = page.map((log, i) => ({
-                        name: `#${idx * PAGE_SIZE + i + 1} — ${log.dimension}`,
-                        value: `X: ${log.x} | Y: ${log.y} | Z: ${log.z}\n${log.timestamp}`,
-                        inline: true,
-                    }));
-                    return new EmbedBuilder()
-                        .setColor("#16213e")
-                        .setTitle(
-                            `Logs de ${targetUser} (p.${idx + 1}/${pages.length})`,
-                        )
-                        .addFields(fields)
-                        .setFooter({
-                            text: `Total: ${userLogs.length} coordenadas`,
-                        });
-                });
-                // Enviar solo los primeros 5 embeds para no superar límites de Discord
-                return interaction.editReply({ embeds: embeds.slice(0, 5) });
             }
 
             if (commandName === "banstatus")
@@ -708,15 +599,16 @@ class DiscordBot {
             }
 
             if (commandName === "say") {
+                if (interaction.user.id !== config.adminDiscordId) {
+                    return interaction.reply({
+                        content: "No tienes permisos para usar este comando.",
+                        ephemeral: true,
+                    });
+                }
                 const mensaje = interaction.options.getString("mensaje");
-                const result = await handleCommand(
-                    "!say " + mensaje,
-                    this.mcBot,
-                    interaction.user.username,
-                    this.banManager,
-                );
+                this.mcBot.chat(mensaje);
                 return interaction.reply({
-                    content: result || "Mensaje enviado.",
+                    content: "Mensaje enviado al chat de Minecraft.",
                     ephemeral: true,
                 });
             }
@@ -785,20 +677,45 @@ class DiscordBot {
 
             if (commandName === "8b8tplayer") {
                 if (!this.joindateManager) {
-                    return interaction.reply({ content: "Sistema de joindate no inicializado.", ephemeral: true });
+                    return interaction.reply({
+                        content: "Sistema de joindate no inicializado.",
+                        ephemeral: true,
+                    });
                 }
                 const stats = this.joindateManager.getStats();
                 const { EmbedBuilder: EB2 } = require("discord.js");
                 const embed = new EB2()
                     .setColor("#16213e")
                     .setTitle("Jugadores Registrados — 8b8t.me")
-                    .setDescription(`El bot tiene registrados **${stats.total}** jugadores.`)
+                    .setDescription(
+                        `El bot tiene registrados **${stats.total}** jugadores.`,
+                    )
                     .addFields(
-                        { name: "Total registrados", value: String(stats.total), inline: true },
-                        { name: "Java", value: String(stats.java || 0), inline: true },
-                        { name: "Bedrock", value: String(stats.bedrock || 0), inline: true },
-                        { name: "Pico online", value: String(stats.peak), inline: true },
-                        { name: "En whitelist", value: String(stats.whitelist), inline: true },
+                        {
+                            name: "Total registrados",
+                            value: String(stats.total),
+                            inline: true,
+                        },
+                        {
+                            name: "Java",
+                            value: String(stats.java || 0),
+                            inline: true,
+                        },
+                        {
+                            name: "Bedrock",
+                            value: String(stats.bedrock || 0),
+                            inline: true,
+                        },
+                        {
+                            name: "Pico online",
+                            value: String(stats.peak),
+                            inline: true,
+                        },
+                        {
+                            name: "En whitelist",
+                            value: String(stats.whitelist),
+                            inline: true,
+                        },
                     )
                     .setTimestamp();
                 return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -806,15 +723,24 @@ class DiscordBot {
 
             if (commandName === "blacklist") {
                 if (!this.joindateManager) {
-                    return interaction.reply({ content: "Sistema de joindate no inicializado.", ephemeral: true });
+                    return interaction.reply({
+                        content: "Sistema de joindate no inicializado.",
+                        ephemeral: true,
+                    });
                 }
                 const targetUser = interaction.options.getString("usuario");
                 const added = this.joindateManager.addToBlacklist(targetUser);
                 this.joindateManager.addPlayerManual(targetUser, null);
                 if (added) {
-                    return interaction.reply({ content: `**${targetUser}** añadido a la blacklist. Aparecerá en rojo en el PDF.`, ephemeral: true });
+                    return interaction.reply({
+                        content: `**${targetUser}** añadido a la blacklist. Aparecerá en rojo en el PDF.`,
+                        ephemeral: true,
+                    });
                 } else {
-                    return interaction.reply({ content: `**${targetUser}** ya estaba en la blacklist.`, ephemeral: true });
+                    return interaction.reply({
+                        content: `**${targetUser}** ya estaba en la blacklist.`,
+                        ephemeral: true,
+                    });
                 }
             }
 
@@ -856,12 +782,16 @@ class DiscordBot {
         let estado = "Conectando...";
         if (this.mcBot && this.mcBot.players) {
             const botUsername = this.mcBot.username;
-            const cantidad = Object.keys(this.mcBot.players).filter(name => {
+            const cantidad = Object.keys(this.mcBot.players).filter((name) => {
                 if (name === botUsername) return false;
                 const p = this.mcBot.players[name];
                 return p && p.ping !== null && p.ping !== undefined;
             }).length;
-            estado = cantidad + " jugador" + (cantidad !== 1 ? "es" : "") + " en 8b8t";
+            estado =
+                cantidad +
+                " jugador" +
+                (cantidad !== 1 ? "es" : "") +
+                " en 8b8t";
         }
         this.client.user.setPresence({
             activities: [{ name: estado, type: ActivityType.Watching }],
