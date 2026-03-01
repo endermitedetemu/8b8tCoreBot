@@ -401,7 +401,7 @@ class MinecraftBot {
     try {
       let emojiPerfil = '<:steve:1463370200912236586>';
       if (user == '14mate') emojiPerfil = '<:14mate:1469897567096799395> ';
-      else if (user == 'Minelord9000') emojiPerfil = '<:minelord:1359041726064492594>';
+      else if (user == 'kutuzovs') emojiPerfil = '<:kutuzovs:1477699695769026630>';
       else if (user == 'htp1p0') emojiPerfil = '<:htp1p0:1463370235162918957>';
       else if (user == 'Kurtz' || user == 'KurtzMC' || user == 'KurtzWasTaken') emojiPerfil = '<:KurtzM:1470114268186808410>';
       else if (user == '888o') emojiPerfil = '<:888o:1473445972200652960>';
