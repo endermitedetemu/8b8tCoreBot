@@ -22,6 +22,7 @@ class MinecraftBot {
     this.whisperCount = {};
     this.lastChatTime = {};
     this.chatCount = {};
+    this.waitingRefillTpa = false;
     this.joindateManager = new JoindateManager();
     this.joindateQueue = [];
     this.joindateQuerying = false;
@@ -185,6 +186,25 @@ class MinecraftBot {
     });
 
     this.bot.on('message', async (msg) => {
+      // Detectar mensaje de teleport aceptado para hacer /kill (solo si estamos esperando un tpa de refill)
+      const rawText = msg.toString();
+      if (
+        this.waitingRefillTpa &&
+        (
+          rawText.toLowerCase().includes('teletransportando') ||
+          rawText.toLowerCase().includes('teleporting') ||
+          rawText.toLowerCase().includes('teleportando')
+        )
+      ) {
+        this.waitingRefillTpa = false;
+        setTimeout(() => {
+          if (this.bot && this.bot.player) {
+            this.bot.chat('/kill');
+          }
+        }, 2000);
+        return;
+      }
+
       let username = helpers.getRealUsername(this.bot, helpers.extraerUsername(msg.toString()));
       let message = helpers.extraerMensaje(msg.toString());
 
@@ -224,6 +244,23 @@ class MinecraftBot {
 
       if (message) {
         const msgLower = message.toLowerCase().trim();
+
+        if (msgLower === 'refill') {
+          const allAllowed = [
+            ...config.permissions.admin,
+            ...config.permissions.moderator,
+            ...config.permissions.special,
+          ];
+          if (allAllowed.includes(username)) {
+            this.bot.chat('/home 1');
+            setTimeout(() => {
+              this.waitingRefillTpa = true;
+              this.bot.chat(`/tpa ${username}`);
+            }, 1000);
+          }
+          return;
+        }
+
         const voyagerHandled = await this.handleVoyager(username, msgLower);
         if (voyagerHandled) return;
         const dupeHandled = await handleDupeCommand(msgLower, this.bot, username, message);
