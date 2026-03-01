@@ -12,12 +12,11 @@ const VOYAGER_MENU = [
 ];
 
 class MinecraftBot {
-  constructor(discordChannel, banManager, messagingHandler, discordClient) {
+  constructor(discordChannel, banManager, discordClient) {
     this.bot = null;
     this.reconnecting = false;
     this.discordChannel = discordChannel;
     this.banManager = banManager;
-    this.messagingHandler = messagingHandler;
     this.discordClient = discordClient;
     this.lastWhisperTime = {};
     this.whisperCount = {};
@@ -230,7 +229,7 @@ class MinecraftBot {
         const dupeHandled = await handleDupeCommand(msgLower, this.bot, username, message);
         if (dupeHandled) return;
         if (message.startsWith('!')) {
-          const respuesta = await handleCommand(message, this.bot, username, this.banManager, false, this.messagingHandler, this.discordClient);
+          const respuesta = await handleCommand(message, this.bot, username, this.banManager, false);
           if (respuesta) this.bot.chat('/w ' + username + ' ' + respuesta);
         }
       }
@@ -262,7 +261,7 @@ class MinecraftBot {
       const dupeHandled = await handleDupeCommand(mensajeMinusculas, this.bot, username, message);
       if (dupeHandled) return;
 
-      let respuesta = await handleCommand(mensajeMinusculas, this.bot, username, this.banManager, false, this.messagingHandler, this.discordClient);
+      let respuesta = await handleCommand(mensajeMinusculas, this.bot, username, this.banManager, false);
       if (respuesta != '' && respuesta != null) {
         let partes = helpers.dividirMensaje(respuesta, 100);
         for (let parte of partes) {

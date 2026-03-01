@@ -2,12 +2,37 @@ const fs = require("fs");
 const path = require("path");
 const config = require("../config");
 const CONFIG_PATH = path.join(__dirname, "../config.js");
+const DUPE_STATE_PATH = path.join(__dirname, "dupe_state.json");
 
 let dupeActive = false;
 let dupeEnabled = true;
 let dupeInterval = null;
 let pendingConfirmation = {};
 let currentDupeUser = null;
+
+// Cargar estado guardado al iniciar
+function loadDupeState() {
+    try {
+        if (fs.existsSync(DUPE_STATE_PATH)) {
+            const data = JSON.parse(fs.readFileSync(DUPE_STATE_PATH, "utf8"));
+            dupeEnabled = typeof data.dupeEnabled === "boolean" ? data.dupeEnabled : true;
+            console.log(`[Dupe] Estado cargado: dupeEnabled=${dupeEnabled}`);
+        }
+    } catch (e) {
+        console.error("[Dupe] Error al cargar estado:", e);
+    }
+}
+
+function saveDupeState() {
+    try {
+        fs.writeFileSync(DUPE_STATE_PATH, JSON.stringify({ dupeEnabled }, null, 2), "utf8");
+    } catch (e) {
+        console.error("[Dupe] Error al guardar estado:", e);
+    }
+}
+
+// Cargar al importar el módulo
+loadDupeState();
 
 const isShulker = (item) => item && item.name && item.name.includes("shulker");
 
@@ -48,7 +73,6 @@ function addPrivateUser(username) {
 }
 
 async function getShulkerInHand(bot) {
-    // Buscar shulker en hotbar primero, si no en inventario completo y moverla
     const allItems = bot.inventory.items();
     const hotbarShulker = allItems.find(
         (item) => isShulker(item) && item.slot >= 36 && item.slot <= 44,
@@ -59,7 +83,6 @@ async function getShulkerInHand(bot) {
         const anyShulker = allItems.find((item) => isShulker(item));
         if (!anyShulker) return null;
 
-        // Mover a slot libre de hotbar
         const hotbarSlots = Array.from({ length: 9 }, (_, i) => 36 + i);
         const occupiedHotbar = new Set(
             allItems
@@ -84,7 +107,6 @@ async function getShulkerInHand(bot) {
         }
     }
 
-    // Equipar en mano
     try {
         await Promise.race([
             bot.equip(shulker, "hand"),
@@ -126,15 +148,10 @@ async function startDupe(bot, username) {
     }
 
     if (!frameEntity) {
-        bot.chat(
-            "/w " +
-                username +
-                " Lo siento, no encontre un marco a mi alrededor.",
-        );
+        bot.chat("/w " + username + " Lo siento, no encontre un marco a mi alrededor.");
         return null;
     }
 
-    // Verificar que hay shulkers
     if (!bot.inventory.items().find((item) => isShulker(item))) {
         bot.chat("/w " + username + " No tengo shulkers en el inventario.");
         return null;
@@ -167,7 +184,6 @@ async function executeDupe(bot, username, frameEntity, frameDirection) {
     dupeActive = true;
     currentDupeUser = username;
 
-    // Mirar al marco
     const yaw = Math.atan2(-frameDirection.x, -frameDirection.z);
     const pitch = Math.atan2(
         -frameDirection.y,
@@ -178,7 +194,6 @@ async function executeDupe(bot, username, frameEntity, frameDirection) {
     );
     bot.look(yaw, pitch, true);
 
-    // Equipar primera shulker
     const ok = await getShulkerInHand(bot);
     if (!ok) {
         dupeActive = false;
@@ -187,7 +202,6 @@ async function executeDupe(bot, username, frameEntity, frameDirection) {
         return null;
     }
 
-    // Ciclo cada 1 segundo: poner shulker → 500ms → quitar → buscar siguiente shulker
     dupeInterval = setInterval(async () => {
         if (!dupeActive) {
             clearInterval(dupeInterval);
@@ -195,31 +209,23 @@ async function executeDupe(bot, username, frameEntity, frameDirection) {
             return;
         }
 
-        // Buscar shulker en mano o equipar una nueva
         const held = bot.inventory.slots[bot.getEquipmentDestSlot("hand")];
         if (!held || !isShulker(held)) {
             const ready = await getShulkerInHand(bot);
             if (!ready) {
-                // Sin shulkers, detener
                 dupeActive = false;
                 currentDupeUser = null;
                 clearInterval(dupeInterval);
                 dupeInterval = null;
-                bot.chat(
-                    "/w " +
-                        username +
-                        " Se acabaron las shulkers. Dupe detenido.",
-                );
+                bot.chat("/w " + username + " Se acabaron las shulkers. Dupe detenido.");
                 return;
             }
         }
 
-        // Poner shulker en marco (click derecho)
         try {
             bot.activateEntity(frameEntity);
         } catch (e) {}
 
-        // Esperar 500ms y quitar (click izquierdo)
         setTimeout(() => {
             if (!dupeActive) return;
             try {
@@ -240,12 +246,7 @@ async function handleConfirmation(bot, username, message) {
     delete pendingConfirmation[username];
 
     if (r === "si") {
-        const result = await executeDupe(
-            bot,
-            username,
-            frameEntity,
-            frameDirection,
-        );
+        const result = await executeDupe(bot, username, frameEntity, frameDirection);
         if (result) bot.chat("/w " + username + " " + result);
     } else {
         bot.chat("/w " + username + " Dupe cancelado.");
@@ -266,6 +267,7 @@ function stopDupe(bot, username) {
 
 function setDupeEnabled(value) {
     dupeEnabled = value;
+    saveDupeState();
     if (!value && dupeActive) {
         dupeActive = false;
         currentDupeUser = null;
@@ -286,7 +288,6 @@ function isDupeActive() {
 async function handleDupeCommand(command, bot, username, message) {
     const cmd = command.trim().toLowerCase();
 
-    // !dupe on/off (solo admins)
     if (cmd === "!dupe on" || cmd === "!dupe off") {
         if (!isAdmin(username)) return false;
         const enable = cmd === "!dupe on";
@@ -300,7 +301,6 @@ async function handleDupeCommand(command, bot, username, message) {
         return true;
     }
 
-    // !dpsprivate <mcuser> (solo admins)
     const privateMatch = cmd.match(/^!dpsprivate\s+(\S+)$/);
     if (privateMatch) {
         if (!isAdmin(username)) return false;
@@ -320,17 +320,13 @@ async function handleDupeCommand(command, bot, username, message) {
                     " ahora tiene acceso al frame dupe.",
             );
         } else {
-            bot.chat(
-                "/w " + username + " " + target + " ya estaba en la lista.",
-            );
+            bot.chat("/w " + username + " " + target + " ya estaba en la lista.");
         }
         return true;
     }
 
-    // Solo operadores o lista privada desde aqui
     if (!hasAccess(username)) return false;
 
-    // !tpa
     if (cmd === "!tpa") {
         if (
             dupeActive &&
@@ -351,7 +347,6 @@ async function handleDupeCommand(command, bot, username, message) {
         return true;
     }
 
-    // Bloqueo sesion activa para privados
     const protectedCmds = ["!dupeon", "!dupeoff", "!drop"];
     if (protectedCmds.includes(cmd)) {
         if (
@@ -371,7 +366,6 @@ async function handleDupeCommand(command, bot, username, message) {
         }
     }
 
-    // !drop — para el dupe y hace /kill
     if (cmd === "!drop") {
         if (dupeActive) stopDupe(bot, username);
         bot.chat("/kill");
@@ -380,7 +374,6 @@ async function handleDupeCommand(command, bot, username, message) {
 
     if (!dupeEnabled) return false;
 
-    // Confirmacion pendiente
     if (pendingConfirmation[username]) {
         return await handleConfirmation(bot, username, message || command);
     }

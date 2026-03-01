@@ -4,18 +4,11 @@ const { EmbedBuilder } = require('discord.js');
 
 let ddsActive = {};
 
-async function handleCommand(mensajeDelUsuario, bot, username, banManager, isDiscord = false, messagingHandler = null, discordClient = null) {
+async function handleCommand(mensajeDelUsuario, bot, username, banManager, isDiscord = false) {
   if ((mensajeDelUsuario.startsWith('!') || mensajeDelUsuario.startsWith('>!') || mensajeDelUsuario.startsWith('> !')) && username != 'MinelordBOT') {
     const [command, ...args] = mensajeDelUsuario.replace('>!', '!').replace('> !', '!').slice(1).split(' ');
 
     switch (command) {
-      case 'w':
-        if (!messagingHandler || !discordClient) return 'Sistema de mensajeria no disponible.';
-        if (args.length < 2) return 'Uso: !w <usuario/id/all> <mensaje>';
-        const wTarget = args[0];
-        const wMessage = args.slice(1).join(' ');
-        return await messagingHandler.sendMessageFromMinecraft(bot, discordClient, username, wTarget, wMessage);
-
       case 'restart':
         if (!config.permissions.admin.includes(username)) return 'Usted no puede usar este comando';
         bot.chat('Reiniciando bot...');
