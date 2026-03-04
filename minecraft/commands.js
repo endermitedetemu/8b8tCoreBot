@@ -1,6 +1,7 @@
 const config = require('../config');
 const minecraftPlayer = require("minecraft-player");
 const { EmbedBuilder } = require('discord.js');
+const { handleKitsCommand, getKitTriggers } = require('./kits/index');
 
 let ddsActive = {};
 
@@ -9,6 +10,27 @@ async function handleCommand(mensajeDelUsuario, bot, username, banManager, isDis
     const [command, ...args] = mensajeDelUsuario.replace('>!', '!').replace('> !', '!').slice(1).split(' ');
 
     switch (command) {
+      case 'help': {
+
+        const kits = getKitTriggers().join(', ');
+        const lines = [
+          '=== Comandos DPS Voyager ===',
+          '!ping [user] | !players | !info [user]',
+          '!tpa | !tpahere (mod+)',
+          '!say <msg> (admin/special)',
+          '!dds <user> <msg> | !ddsoff <user> (admin)',
+          `Kits (escribe sin !): ${kits}`,
+          '!kits add/remove/list <user> (managers)',
+          '!restart (admin)',
+          'voyager | voyager travel <dest>',
+        ];
+
+        return { multiline: true, lines };
+      }
+
+      case 'kits':
+        return handleKitsCommand(username, args);
+
       case 'restart':
         if (!config.permissions.admin.includes(username)) return 'Usted no puede usar este comando';
         bot.chat('Reiniciando bot...');
@@ -60,7 +82,7 @@ async function handleCommand(mensajeDelUsuario, bot, username, banManager, isDis
         return 'Se ejecuto tpahere';
 
       case 'tpa':
-        // Permitir a moderadores, admins, special Y usuarios de lista privada
+
         if (!config.permissions.moderator.includes(username) &&
             !config.permissions.admin.includes(username) &&
             !config.permissions.special.includes(username) &&
@@ -177,7 +199,7 @@ function getDisplayName(bot, username) {
 }
 
 async function getPlayersEmbed(bot) {
-  // Filtrar solo jugadores realmente conectados: excluir los sin ping válido y al propio bot
+
   const playerNames = Object.keys(bot.players)
     .filter(name => {
       if (name === bot.username) return false;

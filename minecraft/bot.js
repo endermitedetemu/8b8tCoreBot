@@ -4,6 +4,7 @@ const helpers = require('../utils/helpers');
 const { handleCommand, stopAllDDS, getDDSActive } = require('./commands');
 const { handleDupeCommand, stopDupe } = require('../dupe/bot');
 const JoindateManager = require('../joindate/manager');
+const { handleKit } = require('./kits/index');
 
 const VOYAGER_MENU = [
   '[ DPS Voyager Fast Travel Network v2.4 ] - Available destinations:',
@@ -23,6 +24,7 @@ class MinecraftBot {
     this.lastChatTime = {};
     this.chatCount = {};
     this.waitingRefillTpa = false;
+    this.waitingKitTpa = false;
     this.joindateManager = new JoindateManager();
     this.joindateQueue = [];
     this.joindateQuerying = false;
@@ -63,9 +65,6 @@ class MinecraftBot {
     return false;
   }
 
-  // ─── JOINDATE ─────────────────────────────────────────────────────────────
-
-  // Loop cada 2 minutos: busca jugadores online sin joindate
   startJoindateLoop() {
     if (this.joindateInterval) clearInterval(this.joindateInterval);
     this.joindateInterval = setInterval(() => {
@@ -135,8 +134,6 @@ class MinecraftBot {
     });
   }
 
-  // ─── SETUP EVENTS ─────────────────────────────────────────────────────────
-
   setupEvents() {
     this.bot.once('spawn', () => {
       this.bot.chatAddPattern(/\[8b8t\]\s+You have successfully logged./, 'logged', 'successfully logged');
@@ -162,7 +159,6 @@ class MinecraftBot {
       setTimeout(() => this.start(), 15000);
     });
 
-    // Jugador entra → joindate inmediato si no está registrado
     this.bot.on('playerJoined', (player) => {
       if (!player || !player.username) return;
       const key = player.username.toLowerCase();
@@ -179,24 +175,22 @@ class MinecraftBot {
       }
     });
 
-    // Jugador sale → actualizar presencia
     this.bot.on('playerLeft', (player) => {
       if (!player || !player.username) return;
       if (this.discordBot) this.discordBot.updatePresence();
     });
 
     this.bot.on('message', async (msg) => {
-      // Detectar mensaje de teleport aceptado para hacer /kill (solo si estamos esperando un tpa de refill)
+
       const rawText = msg.toString();
-      if (
-        this.waitingRefillTpa &&
-        (
-          rawText.toLowerCase().includes('teletransportando') ||
-          rawText.toLowerCase().includes('teleporting') ||
-          rawText.toLowerCase().includes('teleportando')
-        )
-      ) {
+      const isTeleporting =
+        rawText.toLowerCase().includes('teletransportando') ||
+        rawText.toLowerCase().includes('teleporting') ||
+        rawText.toLowerCase().includes('teleportando');
+
+      if ((this.waitingRefillTpa || this.waitingKitTpa) && isTeleporting) {
         this.waitingRefillTpa = false;
+        this.waitingKitTpa = false;
         setTimeout(() => {
           if (this.bot && this.bot.player) {
             this.bot.chat('/kill');
@@ -215,7 +209,6 @@ class MinecraftBot {
         return;
       }
 
-      // Filtrar respuestas del servidor a /joindate para que no lleguen a Discord
       if (message && (
         message.includes('first joined on') ||
         message.includes('You first joined') ||
@@ -245,21 +238,11 @@ class MinecraftBot {
       if (message) {
         const msgLower = message.toLowerCase().trim();
 
-        if (msgLower === 'refill') {
-          const allAllowed = [
-            ...config.permissions.admin,
-            ...config.permissions.moderator,
-            ...config.permissions.special,
-          ];
-          if (allAllowed.includes(username)) {
-            this.bot.chat('/home 1');
-            setTimeout(() => {
-              this.waitingRefillTpa = true;
-              this.bot.chat(`/tpa ${username}`);
-            }, 1000);
-          }
-          return;
-        }
+        const kitHandled = await handleKit(msgLower, this.bot, username, (val) => {
+          this.waitingKitTpa = val;
+          this.waitingRefillTpa = val;
+        });
+        if (kitHandled) return;
 
         const voyagerHandled = await this.handleVoyager(username, msgLower);
         if (voyagerHandled) return;
@@ -267,7 +250,14 @@ class MinecraftBot {
         if (dupeHandled) return;
         if (message.startsWith('!')) {
           const respuesta = await handleCommand(message, this.bot, username, this.banManager, false);
-          if (respuesta) this.bot.chat('/w ' + username + ' ' + respuesta);
+          if (respuesta && respuesta.multiline) {
+            for (const line of respuesta.lines) {
+              this.bot.chat('/w ' + username + ' ' + line);
+              await this.bot.waitForTicks(6);
+            }
+          } else if (respuesta) {
+            this.bot.chat('/w ' + username + ' ' + respuesta);
+          }
         }
       }
     });
@@ -299,7 +289,12 @@ class MinecraftBot {
       if (dupeHandled) return;
 
       let respuesta = await handleCommand(mensajeMinusculas, this.bot, username, this.banManager, false);
-      if (respuesta != '' && respuesta != null) {
+      if (respuesta && respuesta.multiline) {
+        for (const line of respuesta.lines) {
+          this.bot.chat('/w ' + username + ' ' + line);
+          await this.bot.waitForTicks(6);
+        }
+      } else if (respuesta != '' && respuesta != null) {
         let partes = helpers.dividirMensaje(respuesta, 100);
         for (let parte of partes) {
           this.bot.chat('/w ' + username + ' ' + parte);
@@ -341,8 +336,6 @@ class MinecraftBot {
       stopDupe(this.bot, 'system');
     });
   }
-
-  // ─── END LOOP ─────────────────────────────────────────────────────────────
 
   _startEndLoop() {
     if (!this.bot || !this.bot.entity) return;
